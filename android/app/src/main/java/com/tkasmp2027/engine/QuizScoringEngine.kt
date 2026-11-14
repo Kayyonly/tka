@@ -66,7 +66,7 @@ object QuizScoringEngine {
             )
         }
 
-        val isCorrect = when (val key = question.answerKey) {
+        val isCorrect = when (val key: AnswerKey? = question.answerKey) {
             is AnswerKey.Pg -> {
                 answer is UserAnswer.Pg && answer.selectedOptionId == key.correctOptionId
             }
@@ -81,6 +81,7 @@ object QuizScoringEngine {
                         answer.statementSelections[stmt.id] == expected[stmt.id]
                     }
             }
+            null -> false
         }
 
         return QuestionEvaluation(
