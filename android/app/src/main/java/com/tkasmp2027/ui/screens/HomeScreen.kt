@@ -20,6 +20,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -29,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tkasmp2027.engine.ExamSessionEngine
+import com.tkasmp2027.model.ExamReviewStatus
+import com.tkasmp2027.model.LockModeStatus
 import com.tkasmp2027.model.PackageProgress
 import com.tkasmp2027.model.ProgressStatus
 import com.tkasmp2027.model.QuestionPackage
@@ -39,9 +43,11 @@ import com.tkasmp2027.model.SubjectId
 fun HomeScreen(
     packages: List<QuestionPackage>,
     progressMap: Map<String, PackageProgress>,
-    onStartPackage: (String) -> Unit,
+    deviceLockMode: LockModeStatus,
+    onStartOrResumePackage: (String) -> Unit,
+    onViewResultPackage: (String) -> Unit,
     onReviewPackage: (String) -> Unit,
-    onResetProgress: (String) -> Unit
+    onViewActivityLog: (String) -> Unit
 ) {
     val grouped = packages.groupBy { it.subjectId }
     val completedCount = packages.count { progressMap[it.packageId]?.status == ProgressStatus.COMPLETED }
@@ -74,18 +80,35 @@ fun HomeScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text(
-                            text = "Persiapan TKA SMP 2027",
+                            text = "Ujian Digital TKA SMP 2027 (Exam Mode)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Mendukung Pilihan Ganda, PG Kompleks (MCMA), dan Benar/Salah. Progres tersimpan lokal ($completedCount/${packages.size} paket selesai).",
+                            text = "Mendukung Pilihan Ganda, PG Kompleks (MCMA), dan Benar/Salah ($completedCount/${packages.size} paket selesai).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Surface(
+                            color = if (deviceLockMode == LockModeStatus.FULL_LOCKDOWN_AVAILABLE) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = deviceLockMode.badgeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -112,17 +135,22 @@ fun HomeScreen(
                     val total = pkg.questions.size
                     val answered = progress?.lastAnsweredCount ?: 0
                     val ratio = if (total > 0) answered.toFloat() / total.toFloat() else 0f
+                    val isCompleted = progress?.status == ProgressStatus.COMPLETED
+                    val isInProgress = progress?.status == ProgressStatus.IN_PROGRESS
+                    val violations = progress?.violationCount ?: 0
+                    val reviewStatus = ExamSessionEngine.reviewStatus(violations)
+
                     val statusLabel = when {
                         total == 0 -> "Belum tersedia"
-                        progress?.status == ProgressStatus.COMPLETED -> {
-                            val score = progress.lastScorePercent
-                            if (progress.lastKeyedCount > 0 && score != null) {
+                        isCompleted -> {
+                            val score = progress?.lastScorePercent
+                            if ((progress?.lastKeyedCount ?: 0) > 0 && score != null) {
                                 "Selesai · Skor $score"
                             } else {
                                 "Selesai · $answered/$total dijawab"
                             }
                         }
-                        progress?.status == ProgressStatus.IN_PROGRESS -> "Berlangsung · $answered/$total dijawab"
+                        isInProgress -> "Ujian Berlangsung · $answered/$total dijawab"
                         else -> "Belum dimulai"
                     }
 
@@ -149,6 +177,19 @@ fun HomeScreen(
                                 )
                             }
 
+                            if (progress != null && violations > 0) {
+                                Text(
+                                    text = if (reviewStatus == ExamReviewStatus.NEEDS_SUPERVISOR_REVIEW) {
+                                        "Status: Perlu Ditinjau Pengawas ($violations pelanggaran)"
+                                    } else {
+                                        "Aktivitas tercatat: $violations pelanggaran"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
                             Text(
                                 text = pkg.description,
                                 style = MaterialTheme.typography.bodySmall,
@@ -167,29 +208,26 @@ fun HomeScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Button(
-                                    enabled = total > 0,
-                                    onClick = { onStartPackage(pkg.packageId) }
-                                ) {
-                                    val label = when {
-                                        total == 0 -> "Belum Tersedia"
-                                        progress?.status == ProgressStatus.IN_PROGRESS -> "Lanjutkan"
-                                        progress?.status == ProgressStatus.COMPLETED -> "Kerjakan Lagi"
-                                        else -> "Mulai Latihan"
+                                if (!isCompleted) {
+                                    Button(
+                                        enabled = total > 0,
+                                        onClick = { onStartOrResumePackage(pkg.packageId) }
+                                    ) {
+                                        Text(if (isInProgress) "Lanjutkan Ujian" else "Mulai Ujian")
                                     }
-                                    Text(label)
-                                }
-
-                                if (total > 0 && progress?.status == ProgressStatus.COMPLETED) {
+                                } else {
+                                    Button(onClick = { onViewResultPackage(pkg.packageId) }) {
+                                        Text("Lihat Hasil")
+                                    }
                                     OutlinedButton(onClick = { onReviewPackage(pkg.packageId) }) {
                                         Text("Tinjau")
                                     }
                                 }
 
-                                if (total > 0 && progress != null) {
+                                if (progress != null) {
                                     Spacer(modifier = Modifier.weight(1f))
-                                    TextButton(onClick = { onResetProgress(pkg.packageId) }) {
-                                        Text("Reset")
+                                    TextButton(onClick = { onViewActivityLog(pkg.packageId) }) {
+                                        Text("Riwayat")
                                     }
                                 }
                             }

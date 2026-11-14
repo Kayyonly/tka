@@ -1,5 +1,6 @@
 package com.tkasmp2027.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,8 +44,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tkasmp2027.engine.ExamSessionEngine
 import com.tkasmp2027.engine.QuizScoringEngine
+import com.tkasmp2027.model.LockModeStatus
 import com.tkasmp2027.model.QuestionPackage
+import com.tkasmp2027.model.QuestionStatementChoice
 import com.tkasmp2027.model.QuestionType
 import com.tkasmp2027.model.UserAnswer
 import com.tkasmp2027.ui.components.RichHtmlContent
@@ -55,11 +59,21 @@ fun QuizScreen(
     pkg: QuestionPackage,
     currentIndex: Int,
     answers: Map<String, UserAnswer>,
+    remainingSeconds: Int,
+    lockModeStatus: LockModeStatus,
+    violationCount: Int,
+    warningBannerMessage: String?,
+    onDismissWarning: () -> Unit,
     onIndexChange: (Int) -> Unit,
     onUpdateAnswer: (String, UserAnswer) -> Unit,
-    onExitHome: () -> Unit,
+    onAttemptExitNavigation: () -> Unit,
     onSubmitQuiz: () -> Unit
 ) {
+    // Prevent leaving Exam Mode via Android system Back button; record attempt
+    BackHandler(enabled = true) {
+        onAttemptExitNavigation()
+    }
+
     val questions = pkg.questions
     val safeIndex = currentIndex.coerceIn(0, (questions.size - 1).coerceAtLeast(0))
     val question = questions[safeIndex]
@@ -69,15 +83,13 @@ fun QuizScreen(
     var showNavigator by remember { mutableStateOf(false) }
     var showSubmitConfirm by remember { mutableStateOf(false) }
 
+    val formattedTimer = ExamSessionEngine.formatTimer(remainingSeconds)
+    val isLowTime = remainingSeconds in 1..300
+
     Scaffold(
         topBar = {
             Column {
                 TopAppBar(
-                    navigationIcon = {
-                        TextButton(onClick = onExitHome) {
-                            Text("Beranda")
-                        }
-                    },
                     title = {
                         Column {
                             Text(
@@ -93,6 +105,26 @@ fun QuizScreen(
                         }
                     },
                     actions = {
+                        Surface(
+                            color = if (isLowTime) {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else {
+                                MaterialTheme.colorScheme.primaryContainer
+                            },
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = formattedTimer,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isLowTime) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
                         TextButton(onClick = { showNavigator = true }) {
                             Text("Daftar")
                         }
@@ -107,6 +139,35 @@ fun QuizScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "EXAM MODE ACTIVE · ${lockModeStatus.badgeText}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Pelanggaran: $violationCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (violationCount > 0) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
             }
         },
         bottomBar = {
@@ -129,11 +190,9 @@ fun QuizScreen(
                         Text("Sebelumnya")
                     }
 
-                    Text(
-                        text = "$answeredCount/${questions.size}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    TextButton(onClick = { showSubmitConfirm = true }) {
+                        Text("Kumpulkan ($answeredCount/${questions.size})")
+                    }
 
                     if (safeIndex == questions.lastIndex) {
                         Button(onClick = { showSubmitConfirm = true }) {
@@ -156,6 +215,40 @@ fun QuizScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (!warningBannerMessage.isNullOrBlank()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "WARNING",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = warningBannerMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        TextButton(onClick = onDismissWarning) {
+                            Text("Tutup")
+                        }
+                    }
+                }
+            }
+
             Text(
                 text = "Nomor ${question.number} · ID: ${question.id} · ${question.type.label}",
                 style = MaterialTheme.typography.labelMedium,
@@ -324,8 +417,8 @@ fun QuizScreen(
                                 (currentAnswer as? UserAnswer.BenarSalah)?.statementSelections.orEmpty()
                             val choices = question.statementChoices.ifEmpty {
                                 listOf(
-                                    com.tkasmp2027.model.QuestionStatementChoice(1, 1, "Benar"),
-                                    com.tkasmp2027.model.QuestionStatementChoice(2, 2, "Salah")
+                                    QuestionStatementChoice(1, 1, "Benar"),
+                                    QuestionStatementChoice(2, 2, "Salah")
                                 )
                             }
                             Text(
@@ -439,9 +532,11 @@ fun QuizScreen(
     if (showSubmitConfirm) {
         AlertDialog(
             onDismissRequest = { showSubmitConfirm = false },
-            title = { Text("Kumpulkan Jawaban?") },
+            title = { Text("Kumpulkan Jawaban Ujian?") },
             text = {
-                Text("Anda telah menjawab $answeredCount dari ${questions.size} soal.")
+                Text(
+                    "Anda telah menjawab $answeredCount dari ${questions.size} soal. Setelah dikumpulkan, Exam Mode berakhir dan jawaban tidak dapat diubah kembali."
+                )
             },
             confirmButton = {
                 Button(onClick = {

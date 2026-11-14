@@ -39,7 +39,7 @@ fun ReviewScreen(
     answers: Map<String, UserAnswer>,
     evaluation: QuizEvaluation,
     onBackToResult: () -> Unit,
-    onRetryQuiz: () -> Unit
+    onViewActivityLog: () -> Unit
 ) {
     val resultById = evaluation.questionResults.associateBy { it.questionId }
 
@@ -53,8 +53,8 @@ fun ReviewScreen(
                     Text("Tinjauan — ${pkg.subjectName} ${pkg.title}")
                 },
                 actions = {
-                    Button(onClick = onRetryQuiz, modifier = Modifier.padding(end = 8.dp)) {
-                        Text("Ulangi")
+                    TextButton(onClick = onViewActivityLog) {
+                        Text("Riwayat")
                     }
                 }
             )

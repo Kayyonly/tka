@@ -1,12 +1,21 @@
 import React from 'react';
-import { ArrowLeft, CheckCircle2, ClipboardList, RotateCcw } from 'lucide-react';
-import { QuestionPackage, QuestionType, QuizEvaluation } from '../engine/types';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ClipboardList,
+  FileClock,
+  ShieldAlert,
+  ShieldCheck,
+} from 'lucide-react';
+import { getExamReviewStatus } from '../engine/examSession';
+import { PackageProgress, QuestionPackage, QuestionType, QuizEvaluation } from '../engine/types';
 
 interface ResultViewProps {
   pkg: QuestionPackage;
   evaluation: QuizEvaluation;
+  progress?: PackageProgress;
   onReviewAnswers: () => void;
-  onRetryQuiz: () => void;
+  onViewActivityLog: () => void;
   onBackHome: () => void;
 }
 
@@ -16,16 +25,33 @@ const TYPE_LABELS: Record<QuestionType, string> = {
   BENAR_SALAH: 'Benar / Salah',
 };
 
+function formatDateTime(iso?: string | null): string {
+  if (!iso) return '—';
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return iso;
+  return dt.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 export const ResultView: React.FC<ResultViewProps> = ({
   pkg,
   evaluation,
+  progress,
   onReviewAnswers,
-  onRetryQuiz,
+  onViewActivityLog,
   onBackHome,
 }) => {
   const hasKeyedQuestions = evaluation.keyedCount > 0;
   const unansweredCount = evaluation.totalQuestions - evaluation.answeredCount;
   const answeredIncorrectCount = Math.max(0, evaluation.answeredCount - evaluation.correctCount);
+  const violationCount = progress?.violationCount ?? 0;
+  const reviewStatus = getExamReviewStatus(violationCount);
 
   return (
     <div className="min-h-screen bg-[#F6F8FB] text-[#111827]">
@@ -40,7 +66,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
             <span>Beranda</span>
           </button>
           <h1 className="text-sm sm:text-base font-bold text-slate-900 truncate">
-            Hasil Latihan — {pkg.subjectName} {pkg.title}
+            Hasil Ujian — {pkg.subjectName} {pkg.title}
           </h1>
           <div className="w-16" aria-hidden="true" />
         </div>
@@ -57,7 +83,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
                 {pkg.subjectName} · {pkg.title}
               </p>
               <h2 className="text-xl font-bold text-slate-900">
-                {hasKeyedQuestions ? 'Skor Latihan Anda' : 'Latihan Selesai'}
+                {hasKeyedQuestions ? 'Skor Ujian Anda' : 'Ujian Selesai'}
               </h2>
             </div>
             <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" aria-hidden="true" />
@@ -117,6 +143,34 @@ export const ResultView: React.FC<ResultViewProps> = ({
             </div>
           </div>
 
+          <div
+            data-testid="result-supervisor-banner"
+            className={`rounded-xl border p-4 flex flex-wrap items-center justify-between gap-3 ${
+              reviewStatus === 'NEEDS_SUPERVISOR_REVIEW'
+                ? 'bg-rose-50 border-rose-300 text-rose-900'
+                : 'bg-slate-50 border-slate-200 text-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 text-sm font-semibold">
+              {reviewStatus === 'NEEDS_SUPERVISOR_REVIEW' ? (
+                <ShieldAlert className="w-5 h-5 text-rose-700 shrink-0" aria-hidden="true" />
+              ) : (
+                <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0" aria-hidden="true" />
+              )}
+              <span>
+                Status Pengawasan:{' '}
+                {reviewStatus === 'NEEDS_SUPERVISOR_REVIEW'
+                  ? 'Perlu Ditinjau Pengawas'
+                  : 'Normal'}{' '}
+                ({violationCount} pelanggaran)
+              </span>
+            </div>
+            <div className="text-xs text-slate-600 tabular-nums">
+              Mulai: {formatDateTime(progress?.examStartedAt)} · Selesai:{' '}
+              {formatDateTime(progress?.examCompletedAt)}
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
             <button
               type="button"
@@ -129,11 +183,11 @@ export const ResultView: React.FC<ResultViewProps> = ({
 
             <button
               type="button"
-              onClick={onRetryQuiz}
+              onClick={onViewActivityLog}
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl border border-slate-300 bg-white text-sm font-medium text-slate-800 hover:bg-slate-50 transition-colors"
             >
-              <RotateCcw className="w-4 h-4" aria-hidden="true" />
-              <span>Ulangi Latihan</span>
+              <FileClock className="w-4 h-4" aria-hidden="true" />
+              <span>Riwayat Aktivitas Ujian</span>
             </button>
 
             <button

@@ -135,6 +135,29 @@ enum class ProgressStatus {
     COMPLETED
 }
 
+enum class ActivityEventType(val label: String) {
+    APP_LEFT_FOREGROUND("App left foreground"),
+    EXAM_RESUMED_AFTER_LEAVE("Ujian dilanjutkan setelah aplikasi kembali"),
+    ATTEMPT_EXIT_NAVIGATION("Percobaan keluar dari halaman ujian melalui navigasi aplikasi"),
+    EXAM_SUBMITTED("Ujian selesai atau dikumpulkan")
+}
+
+data class ExamActivityEvent(
+    val type: ActivityEventType,
+    val timestampMillis: Long,
+    val detail: String
+)
+
+enum class LockModeStatus(val badgeText: String) {
+    FULL_LOCKDOWN_AVAILABLE("FULL LOCKDOWN AVAILABLE"),
+    MONITORING_MODE_ONLY("MONITORING MODE ONLY")
+}
+
+enum class ExamReviewStatus(val label: String) {
+    NORMAL("Normal"),
+    NEEDS_SUPERVISOR_REVIEW("Perlu Ditinjau Pengawas")
+}
+
 data class PackageProgress(
     val packageId: String,
     val status: ProgressStatus,
@@ -146,5 +169,12 @@ data class PackageProgress(
     val lastAnsweredCount: Int,
     val totalQuestions: Int,
     val attempts: Int,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    val examDurationSeconds: Int = 0,
+    val examStartedAtMillis: Long? = null,
+    val examDeadlineMillis: Long? = null,
+    val examCompletedAtMillis: Long? = null,
+    val lockModeStatus: LockModeStatus = LockModeStatus.MONITORING_MODE_ONLY,
+    val violationCount: Int = 0,
+    val activityLog: List<ExamActivityEvent> = emptyList()
 )

@@ -221,3 +221,52 @@ test('PG, PG Kompleks, and dynamic Benar/Salah grading works accurately', () => 
   assert.equal(result.correctCount, 2);
   assert.equal(result.incorrectCount, 1);
 });
+
+import {
+  finalizeExamProgress,
+  findActiveExamPackageId,
+  formatTimer,
+  getExamReviewStatus,
+  getRemainingSeconds,
+  recordExamActivityEvent,
+  startExamProgress,
+  updateExamAnswersAndIndex,
+} from './examSession';
+
+test('examSession tracks real-time timer, violations, supervisor review status, and preserves answers', () => {
+  const pkg = getPackageById('matematika_paket_1');
+  const startMs = 1_700_000_000_000;
+  let progress = startExamProgress(pkg, undefined, startMs);
+
+  assert.equal(progress.status, 'IN_PROGRESS');
+  assert.equal(progress.examDurationSeconds, 3600);
+  assert.equal(getRemainingSeconds(progress.examDeadlineAt, startMs + 65_000), 3535);
+  assert.equal(formatTimer(3535), '58:55');
+  assert.equal(findActiveExamPackageId({ matematika_paket_1: progress }), 'matematika_paket_1');
+
+  const q1 = pkg.questions[0];
+  progress = updateExamAnswersAndIndex(
+    pkg,
+    progress,
+    { [q1.id]: { type: 'PG', selectedOptionId: 'A' } },
+    1,
+    startMs + 70_000,
+  );
+  assert.equal(progress.lastAnsweredCount, 1);
+  assert.equal(progress.currentQuestionIndex, 1);
+
+  progress = recordExamActivityEvent(progress, 'APP_LEFT_FOREGROUND', 'Left 1', startMs + 80_000);
+  progress = recordExamActivityEvent(progress, 'EXAM_RESUMED_AFTER_LEAVE', 'Back 1', startMs + 82_000);
+  progress = recordExamActivityEvent(progress, 'ATTEMPT_EXIT_NAVIGATION', 'Back pressed', startMs + 85_000);
+  progress = recordExamActivityEvent(progress, 'APP_LEFT_FOREGROUND', 'Left 2', startMs + 90_000);
+
+  assert.equal(progress.violationCount, 3);
+  assert.equal(getExamReviewStatus(progress.violationCount), 'NEEDS_SUPERVISOR_REVIEW');
+  assert.deepEqual(progress.answers[q1.id], { type: 'PG', selectedOptionId: 'A' });
+
+  const finalized = finalizeExamProgress(pkg, progress, 'Submitted', startMs + 100_000);
+  assert.equal(finalized.status, 'COMPLETED');
+  assert.equal(finalized.activityLog.length, 5);
+  assert.equal(finalized.activityLog[4].type, 'EXAM_SUBMITTED');
+  assert.equal(findActiveExamPackageId({ matematika_paket_1: finalized }), null);
+});

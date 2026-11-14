@@ -1,6 +1,6 @@
 import { PackageId, PackageProgress } from './types';
 
-const PROGRESS_STORAGE_KEY = 'tka_smp_2027_progress_v2';
+const PROGRESS_STORAGE_KEY = 'tka_smp_2027_progress_v3';
 
 export type ProgressMap = Partial<Record<PackageId, PackageProgress>>;
 

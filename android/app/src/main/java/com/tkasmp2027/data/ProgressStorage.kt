@@ -1,6 +1,9 @@
 package com.tkasmp2027.data
 
 import android.content.Context
+import com.tkasmp2027.model.ActivityEventType
+import com.tkasmp2027.model.ExamActivityEvent
+import com.tkasmp2027.model.LockModeStatus
 import com.tkasmp2027.model.PackageProgress
 import com.tkasmp2027.model.ProgressStatus
 import com.tkasmp2027.model.UserAnswer
@@ -28,26 +31,31 @@ class ProgressStorage(context: Context) {
         }
     }
 
-    fun saveProgress(progress: PackageProgress): Map<String, PackageProgress> {
+    fun saveProgress(progress: PackageProgress, synchronous: Boolean = false): Map<String, PackageProgress> {
         val current = loadAllProgress().toMutableMap()
         current[progress.packageId] = progress
-        persistProgressMap(current)
+        persistProgressMap(current, synchronous)
         return current
     }
 
     fun clearProgress(packageId: String): Map<String, PackageProgress> {
         val current = loadAllProgress().toMutableMap()
         current.remove(packageId)
-        persistProgressMap(current)
+        persistProgressMap(current, synchronous = true)
         return current
     }
 
-    private fun persistProgressMap(map: Map<String, PackageProgress>) {
+    private fun persistProgressMap(map: Map<String, PackageProgress>, synchronous: Boolean) {
         val root = JSONObject()
         map.forEach { (pkgId, progress) ->
             root.put(pkgId, encodeProgress(progress))
         }
-        prefs.edit().putString(KEY_PROGRESS_JSON, root.toString()).apply()
+        val editor = prefs.edit().putString(KEY_PROGRESS_JSON, root.toString())
+        if (synchronous) {
+            editor.commit()
+        } else {
+            editor.apply()
+        }
     }
 
     private fun encodeProgress(progress: PackageProgress): JSONObject {
@@ -75,6 +83,17 @@ class ProgressStorage(context: Context) {
             answersJson.put(qId, ansObj)
         }
 
+        val logArray = JSONArray()
+        progress.activityLog.forEach { event ->
+            logArray.put(
+                JSONObject().apply {
+                    put("type", event.type.name)
+                    put("timestampMillis", event.timestampMillis)
+                    put("detail", event.detail)
+                }
+            )
+        }
+
         return JSONObject().apply {
             put("packageId", progress.packageId)
             put("status", progress.status.name)
@@ -87,6 +106,13 @@ class ProgressStorage(context: Context) {
             put("totalQuestions", progress.totalQuestions)
             put("attempts", progress.attempts)
             put("updatedAtMillis", progress.updatedAtMillis)
+            put("examDurationSeconds", progress.examDurationSeconds)
+            put("examStartedAtMillis", progress.examStartedAtMillis ?: JSONObject.NULL)
+            put("examDeadlineMillis", progress.examDeadlineMillis ?: JSONObject.NULL)
+            put("examCompletedAtMillis", progress.examCompletedAtMillis ?: JSONObject.NULL)
+            put("lockModeStatus", progress.lockModeStatus.name)
+            put("violationCount", progress.violationCount)
+            put("activityLog", logArray)
         }
     }
 
@@ -131,10 +157,37 @@ class ProgressStorage(context: Context) {
             }
         }
 
+        val logArray = obj.optJSONArray("activityLog") ?: JSONArray()
+        val activityLog = buildList {
+            for (i in 0 until logArray.length()) {
+                val item = logArray.optJSONObject(i) ?: continue
+                val type = try {
+                    ActivityEventType.valueOf(item.optString("type"))
+                } catch (_: Exception) {
+                    continue
+                }
+                add(
+                    ExamActivityEvent(
+                        type = type,
+                        timestampMillis = item.optLong("timestampMillis", 0L),
+                        detail = item.optString("detail", type.label)
+                    )
+                )
+            }
+        }
+
         val status = try {
             ProgressStatus.valueOf(obj.optString("status", ProgressStatus.NOT_STARTED.name))
         } catch (_: Exception) {
             ProgressStatus.NOT_STARTED
+        }
+
+        val lockModeStatus = try {
+            LockModeStatus.valueOf(
+                obj.optString("lockModeStatus", LockModeStatus.MONITORING_MODE_ONLY.name)
+            )
+        } catch (_: Exception) {
+            LockModeStatus.MONITORING_MODE_ONLY
         }
 
         val lastScore = if (obj.isNull("lastScorePercent")) null else obj.optInt("lastScorePercent")
@@ -150,12 +203,31 @@ class ProgressStorage(context: Context) {
             lastAnsweredCount = obj.optInt("lastAnsweredCount", 0),
             totalQuestions = obj.optInt("totalQuestions", 0),
             attempts = obj.optInt("attempts", 0),
-            updatedAtMillis = obj.optLong("updatedAtMillis", 0L)
+            updatedAtMillis = obj.optLong("updatedAtMillis", 0L),
+            examDurationSeconds = obj.optInt("examDurationSeconds", 0),
+            examStartedAtMillis = if (obj.isNull("examStartedAtMillis") || !obj.has("examStartedAtMillis")) {
+                null
+            } else {
+                obj.optLong("examStartedAtMillis")
+            },
+            examDeadlineMillis = if (obj.isNull("examDeadlineMillis") || !obj.has("examDeadlineMillis")) {
+                null
+            } else {
+                obj.optLong("examDeadlineMillis")
+            },
+            examCompletedAtMillis = if (obj.isNull("examCompletedAtMillis") || !obj.has("examCompletedAtMillis")) {
+                null
+            } else {
+                obj.optLong("examCompletedAtMillis")
+            },
+            lockModeStatus = lockModeStatus,
+            violationCount = obj.optInt("violationCount", 0),
+            activityLog = activityLog
         )
     }
 
     companion object {
         private const val PREFS_NAME = "tka_smp_2027_local_storage"
-        private const val KEY_PROGRESS_JSON = "progress_map_v2"
+        private const val KEY_PROGRESS_JSON = "progress_map_v3"
     }
 }

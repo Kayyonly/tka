@@ -139,6 +139,21 @@ export interface QuizEvaluation {
   questionResults: QuestionEvaluation[];
 }
 
+export type ActivityEventType =
+  | 'APP_LEFT_FOREGROUND'
+  | 'EXAM_RESUMED_AFTER_LEAVE'
+  | 'ATTEMPT_EXIT_NAVIGATION'
+  | 'EXAM_SUBMITTED';
+
+export interface ExamActivityEvent {
+  type: ActivityEventType;
+  label: string;
+  timestamp: string;
+  detail: string;
+}
+
+export type ExamReviewStatus = 'NORMAL' | 'NEEDS_SUPERVISOR_REVIEW';
+
 export interface PackageProgress {
   packageId: PackageId;
   status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
@@ -151,4 +166,10 @@ export interface PackageProgress {
   totalQuestions: number;
   attempts: number;
   updatedAt: string;
+  examDurationSeconds: number;
+  examStartedAt: string | null;
+  examDeadlineAt: string | null;
+  examCompletedAt: string | null;
+  violationCount: number;
+  activityLog: ExamActivityEvent[];
 }

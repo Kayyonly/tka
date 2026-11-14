@@ -3,8 +3,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock,
+  FileClock,
   MinusCircle,
-  RotateCcw,
   XCircle,
 } from 'lucide-react';
 import {
@@ -22,7 +22,7 @@ interface ReviewViewProps {
   answers: UserAnswersMap;
   evaluation: QuizEvaluation;
   onBackToResult: () => void;
-  onRetryQuiz: () => void;
+  onViewActivityLog: () => void;
   onBackHome: () => void;
 }
 
@@ -111,7 +111,7 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
   answers,
   evaluation,
   onBackToResult,
-  onRetryQuiz,
+  onViewActivityLog,
   onBackHome,
 }) => {
   const [filter, setFilter] = useState<ReviewFilter>('ALL');
@@ -154,11 +154,11 @@ export const ReviewView: React.FC<ReviewViewProps> = ({
 
           <button
             type="button"
-            onClick={onRetryQuiz}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl bg-[#1D4ED8] text-white text-sm font-semibold hover:bg-[#1E40AF] whitespace-nowrap"
+            onClick={onViewActivityLog}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl border border-slate-300 bg-white text-slate-800 text-sm font-semibold hover:bg-slate-50 whitespace-nowrap"
           >
-            <RotateCcw className="w-4 h-4" aria-hidden="true" />
-            <span>Ulangi</span>
+            <FileClock className="w-4 h-4" aria-hidden="true" />
+            <span>Riwayat</span>
           </button>
         </div>
       </header>
