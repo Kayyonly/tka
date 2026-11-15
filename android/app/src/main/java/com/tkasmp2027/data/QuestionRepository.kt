@@ -3,6 +3,7 @@ package com.tkasmp2027.data
 import android.content.Context
 import com.tkasmp2027.model.AnswerKey
 import com.tkasmp2027.model.QuestionItem
+import com.tkasmp2027.model.QuestionMetadata
 import com.tkasmp2027.model.QuestionOption
 import com.tkasmp2027.model.QuestionPackage
 import com.tkasmp2027.model.QuestionStatement
@@ -17,12 +18,20 @@ object PackageIds {
     const val MATEMATIKA_PAKET_2 = "matematika_paket_2"
     const val BAHASA_INDONESIA_PAKET_1 = "bahasa_indonesia_paket_1"
     const val BAHASA_INDONESIA_PAKET_2 = "bahasa_indonesia_paket_2"
+    const val ORIGINAL_MATEMATIKA_PAKET_1 = "original_matematika_paket_1"
+    const val ORIGINAL_MATEMATIKA_PAKET_2 = "original_matematika_paket_2"
+    const val ORIGINAL_BAHASA_INDONESIA_PAKET_1 = "original_bahasa_indonesia_paket_1"
+    const val ORIGINAL_BAHASA_INDONESIA_PAKET_2 = "original_bahasa_indonesia_paket_2"
 
     val ORDERED = listOf(
         MATEMATIKA_PAKET_1,
         MATEMATIKA_PAKET_2,
         BAHASA_INDONESIA_PAKET_1,
-        BAHASA_INDONESIA_PAKET_2
+        BAHASA_INDONESIA_PAKET_2,
+        ORIGINAL_MATEMATIKA_PAKET_1,
+        ORIGINAL_MATEMATIKA_PAKET_2,
+        ORIGINAL_BAHASA_INDONESIA_PAKET_1,
+        ORIGINAL_BAHASA_INDONESIA_PAKET_2
     )
 }
 
@@ -36,7 +45,7 @@ class QuestionRepository(private val context: Context) {
     }
 
     companion object {
-        private const val MASTER_ASSET_FILE = "TKA_SMP_2027_All_Packages.json"
+        private const val MASTER_ASSET_FILE = "TKA_SMP_2027_All_Packages_v2_Draft.json"
 
         private val OPTION_FIELDS = listOf(
             "A" to "opsi_a",
@@ -67,7 +76,9 @@ class QuestionRepository(private val context: Context) {
         private fun parsePackageObject(pkgObj: JSONObject, schemaVersion: String): QuestionPackage {
             val packageId = pkgObj.getString("package_id")
             val subjectIdRaw = pkgObj.optString("subject_id")
-            val subjectId = if (subjectIdRaw == SubjectId.BAHASA_INDONESIA.key || packageId.startsWith("bahasa")) {
+            val isBahasaIndonesiaPackage = packageId.startsWith("bahasa") ||
+                packageId.startsWith("original_bahasa")
+            val subjectId = if (subjectIdRaw == SubjectId.BAHASA_INDONESIA.key || isBahasaIndonesiaPackage) {
                 SubjectId.BAHASA_INDONESIA
             } else {
                 SubjectId.MATEMATIKA
@@ -82,16 +93,26 @@ class QuestionRepository(private val context: Context) {
 
             val packageNumber = pkgObj.optInt("package_number", 1)
             val packageName = pkgObj.optString("package_name", "${subjectId.displayName} Paket $packageNumber")
+            val bankType = pkgObj.optString("bank_type", "reference").ifBlank { "reference" }
+            val title = when (bankType) {
+                "original" -> "Latihan Orisinal · Paket $packageNumber"
+                else -> "Referensi · Paket $packageNumber"
+            }
+            val description = when (bankType) {
+                "original" -> "$packageName · ${questions.size} soal baru buatan untuk latihan berdasarkan blueprint TKA SMP 2027."
+                else -> "$packageName · ${questions.size} soal referensi TKA SMP 2027; bukan bank orisinal utama."
+            }
 
             return QuestionPackage(
                 packageId = packageId,
                 subjectId = subjectId,
                 subjectName = pkgObj.optString("subject_name").ifBlank { subjectId.displayName },
-                title = "Paket $packageNumber",
-                description = "$packageName · ${questions.size} soal resmi TKA SMP 2027.",
+                title = title,
+                description = description,
                 expectedQuestionCount = pkgObj.optInt("question_count", questions.size),
                 schemaVersion = schemaVersion,
-                questions = questions
+                questions = questions,
+                bankType = bankType
             )
         }
 
@@ -153,7 +174,29 @@ class QuestionRepository(private val context: Context) {
                 options = options,
                 statementChoices = statementChoices,
                 statements = statements,
-                answerKey = answerKey
+                answerKey = answerKey,
+                explanationHtml = obj.optStringOrNull("explanation_html"),
+                competency = obj.optStringOrNull("kompetensi"),
+                subCompetency = obj.optStringOrNull("sub_kompetensi"),
+                metadata = parseMetadata(obj.optJSONObject("metadata"))
+            )
+        }
+
+        private fun parseMetadata(obj: JSONObject?): QuestionMetadata? {
+            if (obj == null) return null
+            return QuestionMetadata(
+                originality = obj.optStringOrNull("originality"),
+                subject = obj.optStringOrNull("subject"),
+                element = obj.optStringOrNull("element"),
+                topic = obj.optStringOrNull("topic"),
+                competency = obj.optStringOrNull("competency"),
+                subcompetency = obj.optStringOrNull("subcompetency"),
+                cognitiveLevel = obj.optStringOrNull("cognitive_level"),
+                difficulty = obj.optStringOrNull("difficulty"),
+                format = obj.optStringOrNull("format"),
+                stimulusType = obj.optStringOrNull("stimulus_type"),
+                stimulusAssetId = obj.optStringOrNull("stimulus_asset_id"),
+                explanationLanguage = obj.optStringOrNull("explanation_language")
             )
         }
 

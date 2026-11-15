@@ -16,18 +16,14 @@ class ProgressStorage(context: Context) {
 
     fun loadAllProgress(): Map<String, PackageProgress> {
         val raw = prefs.getString(KEY_PROGRESS_JSON, null) ?: return emptyMap()
-        return try {
-            val root = JSONObject(raw)
-            buildMap {
-                val keys = root.keys()
-                while (keys.hasNext()) {
-                    val pkgId = keys.next()
-                    val obj = root.getJSONObject(pkgId)
-                    put(pkgId, decodeProgress(pkgId, obj))
-                }
+        val root = JSONObject(raw)
+        return buildMap {
+            val keys = root.keys()
+            while (keys.hasNext()) {
+                val pkgId = keys.next()
+                val obj = root.getJSONObject(pkgId)
+                put(pkgId, decodeProgress(pkgId, obj))
             }
-        } catch (_: Exception) {
-            emptyMap()
         }
     }
 
@@ -153,6 +149,7 @@ class ProgressStorage(context: Context) {
                         }
                         put(qId, UserAnswer.BenarSalah(map))
                     }
+                    else -> throw IllegalArgumentException("Tipe jawaban progres tersimpan tidak dikenal: ${ansObj.optString("type")}")
                 }
             }
         }
@@ -161,11 +158,8 @@ class ProgressStorage(context: Context) {
         val activityLog = buildList {
             for (i in 0 until logArray.length()) {
                 val item = logArray.optJSONObject(i) ?: continue
-                val type = try {
-                    ActivityEventType.valueOf(item.optString("type"))
-                } catch (_: Exception) {
-                    continue
-                }
+                val type = ActivityEventType.entries.firstOrNull { it.name == item.optString("type") }
+                    ?: throw IllegalArgumentException("Jenis peristiwa progres tersimpan tidak dikenal.")
                 add(
                     ExamActivityEvent(
                         type = type,
@@ -176,11 +170,9 @@ class ProgressStorage(context: Context) {
             }
         }
 
-        val status = try {
-            ProgressStatus.valueOf(obj.optString("status", ProgressStatus.NOT_STARTED.name))
-        } catch (_: Exception) {
-            ProgressStatus.NOT_STARTED
-        }
+        val statusRaw = obj.optString("status", ProgressStatus.NOT_STARTED.name)
+        val status = ProgressStatus.entries.firstOrNull { it.name == statusRaw }
+            ?: throw IllegalArgumentException("Status progres tersimpan tidak dikenal.")
 
         val lockModeStatus = try {
             LockModeStatus.valueOf(

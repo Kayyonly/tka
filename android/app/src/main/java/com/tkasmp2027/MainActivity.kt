@@ -1,15 +1,33 @@
 package com.tkasmp2027
 
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -18,7 +36,9 @@ import com.tkasmp2027.data.QuestionRepository
 import com.tkasmp2027.engine.ExamSessionEngine
 import com.tkasmp2027.engine.QuizScoringEngine
 import com.tkasmp2027.model.ActivityEventType
+import com.tkasmp2027.model.PackageProgress
 import com.tkasmp2027.model.ProgressStatus
+import com.tkasmp2027.model.QuestionPackage
 import com.tkasmp2027.model.UserAnswer
 import com.tkasmp2027.security.ExamSecurityManager
 import com.tkasmp2027.ui.screens.ActivityLogScreen
@@ -28,7 +48,10 @@ import com.tkasmp2027.ui.screens.QuizScreen
 import com.tkasmp2027.ui.screens.ResultScreen
 import com.tkasmp2027.ui.screens.ReviewScreen
 import com.tkasmp2027.ui.theme.TkaSmpTheme
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private sealed interface ScreenRoute {
     data object Home : ScreenRoute
@@ -39,9 +62,23 @@ private sealed interface ScreenRoute {
     data class ActivityLog(val packageId: String, val returnToResult: Boolean) : ScreenRoute
 }
 
+private sealed interface StartupState {
+    data object Loading : StartupState
+    data class Failed(val message: String) : StartupState
+    data class Ready(
+        val attempt: Int,
+        val packages: List<QuestionPackage>,
+        val storage: ProgressStorage,
+        val progressMap: Map<String, PackageProgress>,
+        val startRoute: ScreenRoute,
+        val warningMessage: String?
+    ) : StartupState
+}
+
 class MainActivity : ComponentActivity() {
 
     private var activeExamPackageIdForLifecycle: String? = null
+    private var startupStartedAtElapsedRealtime = 0L
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -52,52 +89,58 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val repository = QuestionRepository(applicationContext)
-        val storage = ProgressStorage(applicationContext)
+        startupStartedAtElapsedRealtime = SystemClock.elapsedRealtime()
+        val appContext = applicationContext
 
         setContent {
             TkaSmpTheme {
-                val packages = remember { repository.loadAllPackages() }
-                fun packageById(packageId: String) = packages.first { it.packageId == packageId }
+                var retryLoad by remember { mutableIntStateOf(0) }
+                var startupState by remember { mutableStateOf<StartupState>(StartupState.Loading) }
 
-                // Restore state on launch, including auto-finalizing expired active sessions
-                val initialLoad = remember {
-                    val loaded = storage.loadAllProgress().toMutableMap()
-                    val activeId = ExamSessionEngine.findActiveExamPackageId(loaded)
-                    var startRoute: ScreenRoute = ScreenRoute.Home
-                    if (activeId != null) {
-                        val activeProgress = loaded[activeId]
-                        val pkg = packages.firstOrNull { it.packageId == activeId }
-                        if (activeProgress != null && pkg != null) {
-                            val now = System.currentTimeMillis()
-                            val rem = ExamSessionEngine.remainingSeconds(activeProgress.examDeadlineMillis, now)
-                            if (rem <= 0) {
-                                val finalized = ExamSessionEngine.finalizeExamProgress(
-                                    pkg = pkg,
-                                    current = activeProgress,
-                                    completedAtMillis = now,
-                                    submitDetail = "Waktu ujian habis saat aplikasi tidak aktif; jawaban tersimpan otomatis dikumpulkan."
-                                )
-                                loaded[activeId] = finalized
-                                storage.saveProgress(finalized, synchronous = true)
-                                startRoute = ScreenRoute.Result(activeId)
-                            } else {
-                                startRoute = ScreenRoute.Quiz(activeId, activeProgress.currentQuestionIndex)
-                            }
+                LaunchedEffect(retryLoad) {
+                    startupState = StartupState.Loading
+                    startupState = try {
+                        withContext(Dispatchers.IO) {
+                            loadStartupState(appContext, retryLoad)
                         }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Failed to load local app data", error)
+                        StartupState.Failed(
+                            "Database soal atau progres tersimpan tidak dapat dimuat. Data progres tidak dihapus."
+                        )
                     }
-                    loaded.toMap() to startRoute
                 }
 
-                var progressMap by remember { mutableStateOf(initialLoad.first) }
-                var route by remember { mutableStateOf(initialLoad.second) }
-                var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
-                var warningBannerMessage by remember { mutableStateOf<String?>(null) }
-                var leftForegroundDuringExam by remember { mutableStateOf(false) }
+                when (val startup = startupState) {
+                    StartupState.Loading -> StartupLoadingScreen()
+                    is StartupState.Failed -> StartupErrorScreen(
+                        message = startup.message,
+                        onRetry = { retryLoad += 1 }
+                    )
+                    is StartupState.Ready -> {
+                val packages = startup.packages
+                val storage = startup.storage
+                fun packageById(packageId: String) = packages.first { it.packageId == packageId }
 
-                val deviceLockMode = remember(route) {
-                    ExamSecurityManager.checkLockModeStatus(this@MainActivity)
+                var progressMap by remember(startup.attempt) { mutableStateOf(startup.progressMap) }
+                var route by remember(startup.attempt) { mutableStateOf(startup.startRoute) }
+                var nowMillis by remember(startup.attempt) { mutableLongStateOf(System.currentTimeMillis()) }
+                var warningBannerMessage by remember(startup.attempt) {
+                    mutableStateOf(startup.warningMessage)
+                }
+                var leftForegroundDuringExam by remember(startup.attempt) { mutableStateOf(false) }
+
+                var deviceLockMode by remember(startup.attempt) {
+                    mutableStateOf(ExamSecurityManager.checkLockModeStatus(this@MainActivity))
+                }
+
+                LaunchedEffect(startup.attempt) {
+                    withFrameNanos { }
+                    val elapsed = SystemClock.elapsedRealtime() - startupStartedAtElapsedRealtime
+                    val questionCount = packages.sumOf { it.questions.size }
+                    Log.i(TAG, "Initial screen ready in " + elapsed + "ms (" + packages.size + " packages, " + questionCount + " questions)")
                 }
 
                 val activeQuizPackageId = (route as? ScreenRoute.Quiz)?.packageId
@@ -106,9 +149,10 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(activeQuizPackageId) {
                     activeExamPackageIdForLifecycle = activeQuizPackageId
                     if (activeQuizPackageId != null) {
-                        ExamSecurityManager.enterExamMode(this@MainActivity)
+                        deviceLockMode = ExamSecurityManager.enterExamMode(this@MainActivity)
                     } else {
                         ExamSecurityManager.exitExamMode(this@MainActivity)
+                        deviceLockMode = ExamSecurityManager.checkLockModeStatus(this@MainActivity)
                     }
                     onDispose { }
                 }
@@ -230,8 +274,9 @@ class MainActivity : ComponentActivity() {
                                         pkg = pkg,
                                         existing = existing,
                                         nowMillis = System.currentTimeMillis(),
-                                        lockModeStatus = deviceLockMode
+                                        lockModeStatus = ExamSecurityManager.enterExamMode(this@MainActivity)
                                     )
+                                    deviceLockMode = started.lockModeStatus
                                     progressMap = storage.saveProgress(started, synchronous = true)
                                     warningBannerMessage = null
                                     leftForegroundDuringExam = false
@@ -270,7 +315,7 @@ class MainActivity : ComponentActivity() {
                                         questionIndex = nextIdx,
                                         nowMillis = System.currentTimeMillis()
                                     )
-                                    progressMap = storage.saveProgress(updated)
+                                    progressMap = storage.saveProgress(updated, synchronous = true)
                                     route = ScreenRoute.Quiz(current.packageId, nextIdx)
                                 }
                             },
@@ -285,7 +330,7 @@ class MainActivity : ComponentActivity() {
                                         questionIndex = current.questionIndex,
                                         nowMillis = System.currentTimeMillis()
                                     )
-                                    progressMap = storage.saveProgress(updated, synchronous = true)
+                                    progressMap = storage.saveProgress(updated)
                                 }
                             },
                             onAttemptExitNavigation = {
@@ -372,7 +417,125 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                    }
+                }
             }
         }
     }
 }
+
+private fun loadStartupState(context: android.content.Context, attempt: Int): StartupState.Ready {
+    val repository = QuestionRepository(context)
+    val storage = ProgressStorage(context)
+    val packages = repository.loadAllPackages()
+    val loaded = storage.loadAllProgress().toMutableMap()
+    var startRoute: ScreenRoute = ScreenRoute.Home
+    var warningMessage: String? = null
+
+    val activeId = ExamSessionEngine.findActiveExamPackageId(loaded)
+    if (activeId != null) {
+        var activeProgress = loaded[activeId]
+        val pkg = packages.firstOrNull { it.packageId == activeId }
+        if (activeProgress != null && pkg != null) {
+            var progressChanged = false
+            if (activeProgress.activityLog.lastOrNull()?.type == ActivityEventType.APP_LEFT_FOREGROUND) {
+                activeProgress = ExamSessionEngine.recordActivityEvent(
+                    current = activeProgress,
+                    type = ActivityEventType.EXAM_RESUMED_AFTER_LEAVE,
+                    timestampMillis = System.currentTimeMillis(),
+                    detail = "Ujian dipulihkan setelah aplikasi dibuka kembali."
+                )
+                loaded[activeId] = activeProgress
+                progressChanged = true
+                warningMessage =
+                    "Aktivitas meninggalkan aplikasi telah dicatat (" +
+                        activeProgress.violationCount +
+                        "x). Jawaban Anda tetap tersimpan."
+            }
+
+            val now = System.currentTimeMillis()
+            val remaining = ExamSessionEngine.remainingSeconds(activeProgress.examDeadlineMillis, now)
+            if (remaining <= 0) {
+                val finalized = ExamSessionEngine.finalizeExamProgress(
+                    pkg = pkg,
+                    current = activeProgress,
+                    completedAtMillis = now,
+                    submitDetail = "Waktu ujian habis saat aplikasi tidak aktif; jawaban tersimpan otomatis dikumpulkan."
+                )
+                loaded[activeId] = finalized
+                startRoute = ScreenRoute.Result(activeId)
+                progressChanged = true
+            } else {
+                startRoute = ScreenRoute.Quiz(activeId, activeProgress.currentQuestionIndex)
+            }
+
+            if (progressChanged) {
+                storage.saveProgress(loaded.getValue(activeId), synchronous = true)
+            }
+        }
+    }
+
+    return StartupState.Ready(
+        attempt = attempt,
+        packages = packages,
+        storage = storage,
+        progressMap = loaded.toMap(),
+        startRoute = startRoute,
+        warningMessage = warningMessage
+    )
+}
+
+@Composable
+private fun StartupLoadingScreen() {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(24.dp)
+            ) {
+                CircularProgressIndicator()
+                Text(
+                    text = "Memuat soal dan progres tersimpan…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StartupErrorScreen(message: String, onRetry: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(24.dp)
+            ) {
+                Text(
+                    text = "Aplikasi belum dapat dimuat",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Button(onClick = onRetry) {
+                    Text("Coba Lagi")
+                }
+            }
+        }
+    }
+}
+
+private const val TAG = "TkaSmpStartup"

@@ -53,6 +53,21 @@ data class QuestionStatement(
     val html: String
 )
 
+data class QuestionMetadata(
+    val originality: String? = null,
+    val subject: String? = null,
+    val element: String? = null,
+    val topic: String? = null,
+    val competency: String? = null,
+    val subcompetency: String? = null,
+    val cognitiveLevel: String? = null,
+    val difficulty: String? = null,
+    val format: String? = null,
+    val stimulusType: String? = null,
+    val stimulusAssetId: String? = null,
+    val explanationLanguage: String? = null
+)
+
 sealed interface AnswerKey {
     data class Pg(val correctOptionId: String?) : AnswerKey
     data class PgKompleks(val correctOptionIds: List<String>?) : AnswerKey
@@ -71,7 +86,10 @@ data class QuestionItem(
     val statementChoices: List<QuestionStatementChoice> = emptyList(),
     val statements: List<QuestionStatement> = emptyList(),
     val answerKey: AnswerKey? = null,
-    val explanationHtml: String? = null
+    val explanationHtml: String? = null,
+    val competency: String? = null,
+    val subCompetency: String? = null,
+    val metadata: QuestionMetadata? = null
 )
 
 data class QuestionPackage(
@@ -82,7 +100,8 @@ data class QuestionPackage(
     val description: String,
     val expectedQuestionCount: Int,
     val schemaVersion: String,
-    val questions: List<QuestionItem>
+    val questions: List<QuestionItem>,
+    val bankType: String = "reference"
 )
 
 sealed interface UserAnswer {
