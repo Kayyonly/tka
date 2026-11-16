@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.TkaSmp2027" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Light theme (default). A night variant applies for dark systems via
+        values-night/themes.xml (same style name).
+
+        windowBackground uses @color/window_background (opaque) so the window
+        already matches the theme during startup — no white flash — instead of
+        a splash screen. forceDarkAllowed=false because Compose draws its own
+        surfaces and colors; letting the OS force-dark them would corrupt them.
+    -->
+    <style name="Theme.TkaSmp2027" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
 </resources>

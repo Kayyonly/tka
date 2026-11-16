@@ -346,8 +346,18 @@ fun RichHtmlContent(
         }
         val textColor = cssColor(MaterialTheme.colorScheme.onSurface.toArgb())
         val surfaceColor = cssColor(MaterialTheme.colorScheme.surface.toArgb())
+        val borderColor = cssColor(MaterialTheme.colorScheme.outlineVariant.toArgb())
+        val subtleBg = cssColor(MaterialTheme.colorScheme.surfaceVariant.toArgb())
+        val mutedText = cssColor(MaterialTheme.colorScheme.onSurfaceVariant.toArgb())
         val surfaceColorArgb = MaterialTheme.colorScheme.surface.toArgb()
-        val wrappedHtml = remember(htmlWithScrollableTables, textColor, surfaceColor) {
+        val wrappedHtml = remember(
+            htmlWithScrollableTables,
+            textColor,
+            surfaceColor,
+            borderColor,
+            subtleBg,
+            mutedText
+        ) {
             """
             <!doctype html>
             <html>
@@ -395,13 +405,13 @@ fun RichHtmlContent(
                   font-size: 14px;
                 }
                 th, td {
-                  border: 1px solid #CBD5E1;
+                  border: 1px solid %%BORDER_COLOR%%;
                   padding: 7px 9px;
                   text-align: left;
                   overflow-wrap: anywhere;
                 }
                 th {
-                  background: #F1F5F9;
+                  background: %%SUBTLE_BG%%;
                   font-weight: 600;
                 }
                 img, svg, math {
@@ -417,17 +427,17 @@ fun RichHtmlContent(
                   max-width: 100%;
                   margin: 8px 0;
                   padding: 12px;
-                  border: 1px dashed #94A3B8;
+                  border: 1px dashed %%BORDER_COLOR%%;
                   border-radius: 6px;
-                  background: #F1F5F9;
-                  color: #475569;
+                  background: %%SUBTLE_BG%%;
+                  color: %%MUTED_TEXT%%;
                   font-size: 14px;
                   text-align: center;
                   overflow-wrap: anywhere;
                 }
                 code {
                   font-family: monospace;
-                  background: #F1F5F9;
+                  background: %%SUBTLE_BG%%;
                   padding: 1px 4px;
                   border-radius: 4px;
                   overflow-wrap: anywhere;
@@ -447,6 +457,9 @@ fun RichHtmlContent(
                 .replace("%%BASE_URL%%", PUSMENDIK_BASE_URL)
                 .replace("%%TEXT_COLOR%%", textColor)
                 .replace("%%SURFACE_COLOR%%", surfaceColor)
+                .replace("%%BORDER_COLOR%%", borderColor)
+                .replace("%%SUBTLE_BG%%", subtleBg)
+                .replace("%%MUTED_TEXT%%", mutedText)
         }
 
         if (pageLoadFailed) {

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Dark variant of Theme.TkaSmp2027, selected automatically when the system
+        is in night mode (resource qualifier "night", available since API 8 —
+        no values-v29 required). Same style name as values/themes.xml so the
+        application-level theme assignment in AndroidManifest needs no change.
+
+        windowBackground uses @color/window_background which resolves to the
+        dark opaque color from values-night/colors.xml, preventing any white
+        window flash at cold start in dark mode. forceDarkAllowed=false because
+        Compose draws its own dark surfaces.
+    -->
+    <style name="Theme.TkaSmp2027" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

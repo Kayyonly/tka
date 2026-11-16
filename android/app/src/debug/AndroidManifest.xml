@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        DEBUG-ONLY preview activity used to visually verify design primitives
+        on a physical device. It is not part of src/main or release builds,
+        does not open the question data, and does not touch the exam state.
+    -->
+    <application>
+        <activity
+            android:name=".preview.ComponentPreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TkaSmp2027" />
+    </application>
+</manifest>
